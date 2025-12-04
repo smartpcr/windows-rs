@@ -1,0 +1,73 @@
+# Standalone Cargo.toml - use this to build outside the workspace
+# Copy this to Cargo.toml to build independently
+#
+# Or run: cp Cargo.standalone.toml Cargo.toml && cargo build
+
+[package]
+name = "windows-hyperv"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+description = "Typed Hyper-V management API for Windows"
+
+# Note: Version 0.58 is known to work. Newer versions (0.61+) have a
+# windows-future compatibility issue as of Dec 2024. Update when fixed.
+[dependencies]
+windows-core = "0.58"
+windows-result = "0.2"
+windows = { version = "0.58", features = [
+    "Win32_System_Wmi",
+    "Win32_System_Com",
+    "Win32_System_Variant",
+    "Win32_System_Ole",
+    "Win32_Security",
+] }
+
+[features]
+default = ["std"]
+std = []
+
+[[example]]
+name = "list_vms"
+path = "examples/list_vms.rs"
+
+[[example]]
+name = "create_vm"
+path = "examples/create_vm.rs"
+
+[[example]]
+name = "delete_vm"
+path = "examples/delete_vm.rs"
+
+[[example]]
+name = "vm_power"
+path = "examples/vm_power.rs"
+
+[[example]]
+name = "create_vhd"
+path = "examples/create_vhd.rs"
+
+[[example]]
+name = "attach_disk"
+path = "examples/attach_disk.rs"
+
+[[example]]
+name = "mount_iso"
+path = "examples/mount_iso.rs"
+
+[[example]]
+name = "list_switches"
+path = "examples/list_switches.rs"
+
+[[example]]
+name = "add_network"
+path = "examples/add_network.rs"
+
+[[example]]
+name = "checkpoints"
+path = "examples/checkpoints.rs"
+
+[[example]]
+name = "full_vm_setup"
+path = "examples/full_vm_setup.rs"

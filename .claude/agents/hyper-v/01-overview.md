@@ -8,8 +8,8 @@ The Windows Hypervisor Platform (WHP) provides a set of APIs for creating and ma
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    User Application                          │
-│                    (VMM, Emulator)                           │
+│                    User Application                         │
+│                    (VMM, Emulator)                          │
 └─────────────────────────────────────────────────────────────┘
                               │
          ┌────────────────────┼────────────────────┐
