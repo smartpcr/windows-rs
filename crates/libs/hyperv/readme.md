@@ -62,10 +62,25 @@ cargo run --example attach_disk -- MyTestVM C:\VMs\disk.vhdx
 cargo run --example mount_iso -- MyTestVM C:\ISOs\windows.iso
 ```
 
-### List Virtual Switches
+### Manage Virtual Switches
 
 ```bash
-cargo run --example list_switches
+# List all virtual switches
+cargo run --example manage_switch -- list
+
+# List physical network adapters (for external switches)
+cargo run --example manage_switch -- list-adapters
+
+# Create switches
+cargo run --example manage_switch -- create "MyPrivate" private
+cargo run --example manage_switch -- create "MyInternal" internal
+cargo run --example manage_switch -- create "MyExternal" external --adapter "Ethernet"
+
+# Show switch details
+cargo run --example manage_switch -- info "Default Switch"
+
+# Delete a switch
+cargo run --example manage_switch -- delete "MyPrivate"
 ```
 
 ### Add Network Adapter
@@ -134,6 +149,58 @@ fn main() -> windows_hyperv::Result<()> {
 
     // Start the VM
     vm.start()?;
+
+    Ok(())
+}
+```
+
+## Virtual Switch Management
+
+```rust
+use windows_hyperv::{HyperV, VirtualSwitchSettings, SwitchType};
+
+fn main() -> windows_hyperv::Result<()> {
+    let hyperv = HyperV::connect()?;
+
+    // List all switches with full details
+    for switch in hyperv.list_switches()? {
+        println!("{}: {} ({})",
+            switch.name(),
+            switch.switch_type(),
+            if switch.allows_management_os() { "host access" } else { "no host" }
+        );
+    }
+
+    // Create a private switch (VMs only)
+    let settings = VirtualSwitchSettings::builder()
+        .name("MyPrivateSwitch")
+        .private()
+        .notes("For isolated VM networking")
+        .build()?;
+    let switch = hyperv.create_switch(&settings)?;
+
+    // Create an internal switch (host + VMs)
+    let settings = VirtualSwitchSettings::builder()
+        .name("MyInternalSwitch")
+        .internal()
+        .build()?;
+    let switch = hyperv.create_switch(&settings)?;
+
+    // Create an external switch (connected to physical adapter)
+    let adapters = hyperv.list_physical_adapters()?;
+    if let Some(adapter) = adapters.first() {
+        let settings = VirtualSwitchSettings::builder()
+            .name("MyExternalSwitch")
+            .external(&adapter.device_id)
+            .allow_management_os(true)  // Host can also use this network
+            .enable_iov(true)           // Enable SR-IOV if hardware supports it
+            .build()?;
+        let switch = hyperv.create_switch(&settings)?;
+    }
+
+    // Delete a switch
+    let switch = hyperv.get_switch("MyPrivateSwitch")?;
+    hyperv.delete_switch(&switch)?;
 
     Ok(())
 }

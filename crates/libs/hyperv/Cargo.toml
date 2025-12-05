@@ -26,6 +26,8 @@ windows = { workspace = true, features = [
 [features]
 default = ["std"]
 std = ["windows-core/std", "windows-result/std", "windows-strings/std"]
+# Enable integration tests (requires Hyper-V and admin privileges)
+integration = []
 
 [lints]
 workspace = true

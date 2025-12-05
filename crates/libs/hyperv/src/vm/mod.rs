@@ -1,7 +1,12 @@
-mod state;
 mod computer_system;
 mod settings;
+mod state;
+mod types;
 
-pub use state::*;
 pub use computer_system::VirtualMachine;
 pub use settings::{VmSettings, VmSettingsBuilder};
+pub use state::*;
+pub use types::{
+    BandwidthWeight, BlockSize, DiskLocation, DiskSize, MacAddress, MemoryBufferPercent, MemoryMB,
+    MemoryWeight, ProcessorCount, ProcessorPercent, ProcessorWeight, SectorSize, VlanId,
+};

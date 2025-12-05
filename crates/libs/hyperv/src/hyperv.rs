@@ -1,6 +1,9 @@
 use crate::checkpoint::{Checkpoint, CheckpointSettings};
 use crate::error::{Error, Result};
-use crate::network::{NetworkAdapter, NetworkAdapterSettings, VirtualSwitch};
+use crate::network::{
+    NetworkAdapter, NetworkAdapterSettings, PhysicalAdapter, SwitchType, VirtualSwitch,
+    VirtualSwitchSettings,
+};
 use crate::storage::{ControllerType, DiskAttachment, IsoAttachment, VhdManager};
 use crate::vm::{Generation, VirtualMachine, VmSettings, VmState};
 use crate::wmi::{WbemClassObjectExt, WmiConnection};
@@ -274,24 +277,361 @@ impl HyperV {
 
     // ========== Network Operations ==========
 
-    /// List all virtual switches.
+    /// List all virtual switches with full details.
     pub fn list_switches(&self) -> Result<Vec<VirtualSwitch>> {
         let query = "SELECT * FROM Msvm_VirtualEthernetSwitch";
-        let objects = self.connection.query(query)?;
+        let switch_objects = self.connection.query(query)?;
 
-        objects.iter().map(VirtualSwitch::from_wmi).collect()
+        let mut switches = Vec::new();
+        for switch_obj in &switch_objects {
+            let switch = self.build_switch_with_details(switch_obj)?;
+            switches.push(switch);
+        }
+        Ok(switches)
     }
 
-    /// Get a virtual switch by name.
+    /// Get a virtual switch by name with full details.
     pub fn get_switch(&self, name: &str) -> Result<VirtualSwitch> {
         let query = format!(
             "SELECT * FROM Msvm_VirtualEthernetSwitch WHERE ElementName = '{}'",
             name.replace('\'', "''")
         );
-        let obj = self.connection.query_first(&query)?
+        let switch_obj = self.connection.query_first(&query)?
             .ok_or_else(|| Error::SwitchNotFound(name.to_string()))?;
 
-        VirtualSwitch::from_wmi(&obj)
+        self.build_switch_with_details(&switch_obj)
+    }
+
+    /// Get a virtual switch by ID (GUID).
+    pub fn get_switch_by_id(&self, id: &str) -> Result<VirtualSwitch> {
+        let query = format!(
+            "SELECT * FROM Msvm_VirtualEthernetSwitch WHERE Name = '{}'",
+            id.replace('\'', "''")
+        );
+        let switch_obj = self.connection.query_first(&query)?
+            .ok_or_else(|| Error::SwitchNotFound(id.to_string()))?;
+
+        self.build_switch_with_details(&switch_obj)
+    }
+
+    /// List all physical network adapters available for external switches.
+    pub fn list_physical_adapters(&self) -> Result<Vec<PhysicalAdapter>> {
+        let query = "SELECT * FROM Msvm_ExternalEthernetPort";
+        let objects = self.connection.query(query)?;
+
+        objects.iter().map(PhysicalAdapter::from_wmi).collect()
+    }
+
+    /// Get a physical adapter by device ID.
+    pub fn get_physical_adapter(&self, device_id: &str) -> Result<PhysicalAdapter> {
+        let query = format!(
+            "SELECT * FROM Msvm_ExternalEthernetPort WHERE DeviceID = '{}'",
+            device_id.replace('\'', "''")
+        );
+        let obj = self.connection.query_first(&query)?
+            .ok_or_else(|| Error::OperationFailed {
+                operation: "GetPhysicalAdapter",
+                return_value: 0,
+                message: format!("Physical adapter not found: {}", device_id),
+            })?;
+
+        PhysicalAdapter::from_wmi(&obj)
+    }
+
+    /// Create a new virtual switch.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use windows_hyperv::{HyperV, VirtualSwitchSettings, SwitchType};
+    ///
+    /// let hyperv = HyperV::connect()?;
+    ///
+    /// // Create a private switch
+    /// let settings = VirtualSwitchSettings::builder()
+    ///     .name("MyPrivateSwitch")
+    ///     .private()
+    ///     .build()?;
+    /// let switch = hyperv.create_switch(&settings)?;
+    ///
+    /// // Create an external switch
+    /// let adapters = hyperv.list_physical_adapters()?;
+    /// let settings = VirtualSwitchSettings::builder()
+    ///     .name("MyExternalSwitch")
+    ///     .external(&adapters[0].device_id)
+    ///     .allow_management_os(true)
+    ///     .build()?;
+    /// let switch = hyperv.create_switch(&settings)?;
+    /// # Ok::<(), windows_hyperv::Error>(())
+    /// ```
+    pub fn create_switch(&self, settings: &VirtualSwitchSettings) -> Result<VirtualSwitch> {
+        settings.validate()?;
+
+        // Get the switch management service
+        let switch_service = self.get_switch_management_service()?;
+        let switch_service_path = switch_service.get_path()?;
+
+        // Create switch settings data
+        let switch_settings = self.connection.spawn_instance("Msvm_VirtualEthernetSwitchSettingData")?;
+        switch_settings.put_string("ElementName", &settings.name)?;
+
+        if let Some(ref notes) = settings.notes {
+            switch_settings.put_string("Notes", notes)?;
+        }
+
+        // Set bandwidth reservation mode
+        switch_settings.put_u32("BandwidthReservationMode", settings.bandwidth_reservation_mode.to_value())?;
+
+        if let Some(weight) = settings.default_flow_min_bandwidth_weight {
+            switch_settings.put_u32("DefaultFlowMinimumBandwidthWeight", weight)?;
+        }
+
+        if let Some(mbps) = settings.default_flow_min_bandwidth_mbps {
+            // Convert Mbps to bits per second
+            switch_settings.put_u64("DefaultFlowMinimumBandwidthAbsolute", mbps * 1_000_000)?;
+        }
+
+        // IOV settings
+        switch_settings.put_bool("IOVPreferred", settings.enable_iov)?;
+
+        // Packet direct
+        switch_settings.put_bool("PacketDirectEnabled", settings.enable_packet_direct)?;
+
+        // Embedded teaming
+        switch_settings.put_bool("TeamingEnabled", settings.enable_embedded_teaming)?;
+
+        let switch_settings_text = switch_settings.get_text()?;
+
+        // Prepare resource settings for external port if needed
+        let mut resource_settings: Vec<String> = Vec::new();
+
+        if settings.switch_type == SwitchType::External {
+            if let Some(ref adapter_id) = settings.external_adapter_id {
+                // Find the physical adapter
+                let adapter = self.get_physical_adapter(adapter_id)?;
+
+                // Create external ethernet port allocation
+                let ext_port = self.connection.spawn_instance("Msvm_EthernetPortAllocationSettingData")?;
+                ext_port.put_string_array("HostResource", &[adapter.path()])?;
+
+                resource_settings.push(ext_port.get_text()?);
+            }
+        }
+
+        // Add internal port for management OS access (for External/Internal switches)
+        if settings.allow_management_os && settings.switch_type != SwitchType::Private {
+            // Internal port will be created automatically when AllowManagementOS is set
+            // through the switch management service
+        }
+
+        // Call DefineSystem to create the switch
+        let in_params = self.connection.get_method_params(
+            "Msvm_VirtualEthernetSwitchManagementService",
+            "DefineSystem",
+        )?;
+        in_params.put_string("SystemSettings", &switch_settings_text)?;
+
+        // Convert resource settings to string array
+        let resource_refs: Vec<&str> = resource_settings.iter().map(|s| s.as_str()).collect();
+        in_params.put_string_array("ResourceSettings", &resource_refs)?;
+
+        let out_params = self.connection.exec_method(&switch_service_path, "DefineSystem", Some(&in_params))?;
+        self.handle_job_result(&out_params, "DefineSystem")?;
+
+        // Get the created switch
+        let result_system = out_params.get_string_prop("ResultingSystem")?
+            .ok_or_else(|| Error::OperationFailed {
+                operation: "DefineSystem",
+                return_value: 0,
+                message: "No ResultingSystem returned".to_string(),
+            })?;
+
+        let switch_obj = self.connection.get_object(&result_system)?;
+        let switch_id = switch_obj.get_string_prop_required("Name")?;
+
+        // If management OS access is needed, add the internal port
+        if settings.allow_management_os && settings.switch_type != SwitchType::Private {
+            self.add_internal_port_to_switch(&switch_id)?;
+        }
+
+        // Return the created switch with full details
+        self.get_switch_by_id(&switch_id)
+    }
+
+    /// Delete a virtual switch.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use windows_hyperv::HyperV;
+    ///
+    /// let hyperv = HyperV::connect()?;
+    /// let switch = hyperv.get_switch("MySwitch")?;
+    /// hyperv.delete_switch(&switch)?;
+    /// # Ok::<(), windows_hyperv::Error>(())
+    /// ```
+    pub fn delete_switch(&self, switch: &VirtualSwitch) -> Result<()> {
+        let switch_service = self.get_switch_management_service()?;
+        let switch_service_path = switch_service.get_path()?;
+
+        let in_params = self.connection.get_method_params(
+            "Msvm_VirtualEthernetSwitchManagementService",
+            "DestroySystem",
+        )?;
+
+        // Use the switch path
+        in_params.put_string("AffectedSystem", switch.path())?;
+
+        let out_params = self.connection.exec_method(&switch_service_path, "DestroySystem", Some(&in_params))?;
+        self.handle_job_result(&out_params, "DestroySystem")
+    }
+
+    /// Modify an existing virtual switch.
+    ///
+    /// Note: Not all settings can be modified after creation. Switch type cannot be changed.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use windows_hyperv::{HyperV, VirtualSwitchSettings};
+    ///
+    /// let hyperv = HyperV::connect()?;
+    /// let switch = hyperv.get_switch("MySwitch")?;
+    ///
+    /// // Update switch notes
+    /// let new_settings = VirtualSwitchSettings::builder()
+    ///     .name("MySwitch")
+    ///     .switch_type(switch.switch_type())
+    ///     .notes("Updated description")
+    ///     .build()?;
+    ///
+    /// hyperv.modify_switch(&switch, &new_settings)?;
+    /// # Ok::<(), windows_hyperv::Error>(())
+    /// ```
+    pub fn modify_switch(&self, switch: &VirtualSwitch, settings: &VirtualSwitchSettings) -> Result<()> {
+        // Validate that switch type hasn't changed
+        if settings.switch_type != switch.switch_type() {
+            return Err(Error::Validation {
+                field: "switch_type",
+                message: "Cannot change switch type after creation".to_string(),
+            });
+        }
+
+        settings.validate()?;
+
+        let switch_service = self.get_switch_management_service()?;
+        let switch_service_path = switch_service.get_path()?;
+
+        // Get current switch settings
+        let settings_query = format!(
+            "SELECT * FROM Msvm_VirtualEthernetSwitchSettingData WHERE VirtualSystemIdentifier = '{}'",
+            switch.id()
+        );
+        let switch_settings = self.connection.query_first(&settings_query)?
+            .ok_or_else(|| Error::SwitchNotFound(switch.name().to_string()))?;
+
+        // Update settings
+        switch_settings.put_string("ElementName", &settings.name)?;
+
+        if let Some(ref notes) = settings.notes {
+            switch_settings.put_string("Notes", notes)?;
+        }
+
+        switch_settings.put_u32("BandwidthReservationMode", settings.bandwidth_reservation_mode.to_value())?;
+
+        if let Some(weight) = settings.default_flow_min_bandwidth_weight {
+            switch_settings.put_u32("DefaultFlowMinimumBandwidthWeight", weight)?;
+        }
+
+        if let Some(mbps) = settings.default_flow_min_bandwidth_mbps {
+            switch_settings.put_u64("DefaultFlowMinimumBandwidthAbsolute", mbps * 1_000_000)?;
+        }
+
+        let switch_settings_text = switch_settings.get_text()?;
+
+        let in_params = self.connection.get_method_params(
+            "Msvm_VirtualEthernetSwitchManagementService",
+            "ModifySystemSettings",
+        )?;
+        in_params.put_string("SystemSettings", &switch_settings_text)?;
+
+        let out_params = self.connection.exec_method(&switch_service_path, "ModifySystemSettings", Some(&in_params))?;
+        self.handle_job_result(&out_params, "ModifySystemSettings")
+    }
+
+    /// Build a VirtualSwitch with full details from a WMI switch object.
+    fn build_switch_with_details(&self, switch_obj: &IWbemClassObject) -> Result<VirtualSwitch> {
+        let switch_id = switch_obj.get_string_prop_required("Name")?;
+
+        // Get switch settings
+        let settings_query = format!(
+            "SELECT * FROM Msvm_VirtualEthernetSwitchSettingData WHERE VirtualSystemIdentifier = '{}'",
+            switch_id
+        );
+        let settings_obj = self.connection.query_first(&settings_query)?;
+
+        // Check for external port (connected to physical adapter)
+        let ext_port_query = format!(
+            "ASSOCIATORS OF {{Msvm_VirtualEthernetSwitch.CreationClassName='Msvm_VirtualEthernetSwitch',Name='{}'}} \
+             WHERE AssocClass=Msvm_SystemDevice ResultClass=Msvm_ExternalEthernetPort",
+            switch_id
+        );
+        let has_external_port = self.connection.query_first(&ext_port_query)?.is_some();
+
+        // Check for internal port (management OS access)
+        let int_port_query = format!(
+            "ASSOCIATORS OF {{Msvm_VirtualEthernetSwitch.CreationClassName='Msvm_VirtualEthernetSwitch',Name='{}'}} \
+             WHERE AssocClass=Msvm_SystemDevice ResultClass=Msvm_InternalEthernetPort",
+            switch_id
+        );
+        let has_internal_port = self.connection.query_first(&int_port_query)?.is_some();
+
+        VirtualSwitch::from_wmi_with_settings(
+            switch_obj,
+            settings_obj.as_ref(),
+            has_external_port,
+            has_internal_port,
+        )
+    }
+
+    /// Get the virtual ethernet switch management service.
+    fn get_switch_management_service(&self) -> Result<IWbemClassObject> {
+        self.connection
+            .query_first("SELECT * FROM Msvm_VirtualEthernetSwitchManagementService")?
+            .ok_or_else(|| Error::WmiQuery {
+                query: "Msvm_VirtualEthernetSwitchManagementService".to_string(),
+                source: windows_core::Error::from_hresult(windows_core::HRESULT(-1)),
+            })
+    }
+
+    /// Add an internal ethernet port to a switch for management OS access.
+    fn add_internal_port_to_switch(&self, switch_id: &str) -> Result<()> {
+        let switch_service = self.get_switch_management_service()?;
+        let switch_service_path = switch_service.get_path()?;
+
+        // Get the switch settings
+        let settings_query = format!(
+            "SELECT * FROM Msvm_VirtualEthernetSwitchSettingData WHERE VirtualSystemIdentifier = '{}'",
+            switch_id
+        );
+        let switch_settings = self.connection.query_first(&settings_query)?
+            .ok_or_else(|| Error::SwitchNotFound(switch_id.to_string()))?;
+        let switch_settings_path = switch_settings.get_path()?;
+
+        // Create internal ethernet port allocation
+        let int_port = self.connection.spawn_instance("Msvm_EthernetPortAllocationSettingData")?;
+        int_port.put_string("ElementName", "Internal Port")?;
+        // HostResource for internal port points to the host partition
+        // The absence of HostResource or empty array indicates an internal port
+
+        let int_port_text = int_port.get_text()?;
+
+        let in_params = self.connection.get_method_params(
+            "Msvm_VirtualEthernetSwitchManagementService",
+            "AddResourceSettings",
+        )?;
+        in_params.put_string("AffectedConfiguration", &switch_settings_path)?;
+        in_params.put_string_array("ResourceSettings", &[&int_port_text])?;
+
+        let out_params = self.connection.exec_method(&switch_service_path, "AddResourceSettings", Some(&in_params))?;
+        self.handle_job_result(&out_params, "AddResourceSettings")
     }
 
     /// Add a network adapter to a VM.

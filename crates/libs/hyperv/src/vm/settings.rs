@@ -342,3 +342,519 @@ impl VmSettingsBuilder {
         Ok(settings)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to create a minimal valid settings builder
+    fn valid_builder() -> VmSettingsBuilder {
+        VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+    }
+
+    // ========== VmSettings Builder Required Fields Tests ==========
+
+    #[test]
+    fn test_builder_creates_valid_settings() {
+        let result = valid_builder().build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.name, "TestVM");
+        assert_eq!(settings.generation, Generation::Gen2);
+        assert_eq!(settings.memory_mb, 2048);
+        assert_eq!(settings.processor_count, 2);
+    }
+
+    #[test]
+    fn test_builder_missing_name() {
+        let result = VmSettings::builder()
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builder_missing_generation() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builder_missing_memory() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builder_missing_processor_count() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .build();
+        assert!(result.is_err());
+    }
+
+    // ========== Name Validation Tests ==========
+
+    #[test]
+    fn test_name_empty() {
+        let result = VmSettings::builder()
+            .name("")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_too_long() {
+        let long_name = "a".repeat(101);
+        let result = VmSettings::builder()
+            .name(long_name)
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_max_length() {
+        let name = "a".repeat(100);
+        let result = VmSettings::builder()
+            .name(name)
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_backslash() {
+        let result = VmSettings::builder()
+            .name("Test\\VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_forward_slash() {
+        let result = VmSettings::builder()
+            .name("Test/VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_colon() {
+        let result = VmSettings::builder()
+            .name("Test:VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_asterisk() {
+        let result = VmSettings::builder()
+            .name("Test*VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_question() {
+        let result = VmSettings::builder()
+            .name("Test?VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_quote() {
+        let result = VmSettings::builder()
+            .name("Test\"VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_angle_brackets() {
+        let result1 = VmSettings::builder()
+            .name("Test<VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result1.is_err());
+
+        let result2 = VmSettings::builder()
+            .name("Test>VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn test_name_invalid_chars_pipe() {
+        let result = VmSettings::builder()
+            .name("Test|VM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_name_valid_with_spaces_and_dashes() {
+        let result = VmSettings::builder()
+            .name("Test VM - Production")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    // ========== Memory Validation Tests ==========
+
+    #[test]
+    fn test_memory_min_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(32)
+            .processor_count(2)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_memory_below_min() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(31)
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_memory_max_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(12_582_912) // 12 TB
+            .processor_count(2)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_memory_above_max() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(12_582_913) // Over 12 TB
+            .processor_count(2)
+            .build();
+        assert!(result.is_err());
+    }
+
+    // ========== Processor Count Validation Tests ==========
+
+    #[test]
+    fn test_processor_count_min_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(1)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_processor_count_max_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(240)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_processor_count_above_max() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(241)
+            .build();
+        assert!(result.is_err());
+    }
+
+    // ========== Dynamic Memory Validation Tests ==========
+
+    #[test]
+    fn test_dynamic_memory_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .dynamic_memory_min_mb(512)
+            .dynamic_memory_max_mb(8192)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_dynamic_memory_min_below_32() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .dynamic_memory_min_mb(16)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dynamic_memory_min_exceeds_startup() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .dynamic_memory_min_mb(4096) // More than startup
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dynamic_memory_max_below_startup() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .dynamic_memory_max_mb(1024) // Less than startup
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dynamic_memory_min_exceeds_max() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .dynamic_memory_min_mb(1024)
+            .dynamic_memory_max_mb(512) // Min > Max
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_memory_buffer_percentage_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .memory_buffer_percentage(20)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_memory_buffer_percentage_max() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .memory_buffer_percentage(100)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_memory_buffer_percentage_over_100() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(true)
+            .memory_buffer_percentage(101)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dynamic_memory_disabled_ignores_validation() {
+        // When dynamic memory is disabled, min/max/buffer are not validated
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .dynamic_memory(false)
+            .dynamic_memory_min_mb(16) // Would be invalid if dynamic enabled
+            .dynamic_memory_max_mb(100) // Would be invalid if dynamic enabled
+            .memory_buffer_percentage(200) // Would be invalid if dynamic enabled
+            .build();
+        assert!(result.is_ok());
+    }
+
+    // ========== Generation-Specific Validation Tests ==========
+
+    #[test]
+    fn test_gen1_secure_boot_invalid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen1)
+            .memory_mb(2048)
+            .processor_count(2)
+            .secure_boot(true)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_gen2_secure_boot_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(2048)
+            .processor_count(2)
+            .secure_boot(true)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_gen1_no_secure_boot_valid() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen1)
+            .memory_mb(2048)
+            .processor_count(2)
+            .secure_boot(false)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    // ========== Optional Settings Tests ==========
+
+    #[test]
+    fn test_all_optional_settings() {
+        let result = VmSettings::builder()
+            .name("TestVM")
+            .generation(Generation::Gen2)
+            .memory_mb(4096)
+            .processor_count(4)
+            .config_path("C:\\VMs\\TestVM")
+            .snapshot_path("C:\\VMs\\TestVM\\Snapshots")
+            .smart_paging_path("C:\\VMs\\TestVM\\SmartPaging")
+            .dynamic_memory(true)
+            .dynamic_memory_min_mb(1024)
+            .dynamic_memory_max_mb(16384)
+            .memory_buffer_percentage(20)
+            .secure_boot(true)
+            .secure_boot_template("MicrosoftWindows")
+            .tpm_enabled(true)
+            .nested_virtualization(true)
+            .automatic_start_action(AutomaticStartAction::AlwaysStart)
+            .automatic_start_delay(60)
+            .automatic_stop_action(AutomaticStopAction::Shutdown)
+            .checkpoint_type(CheckpointType::Production)
+            .notes("This is a test VM")
+            .build();
+
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.config_path, Some("C:\\VMs\\TestVM".to_string()));
+        assert_eq!(settings.snapshot_path, Some("C:\\VMs\\TestVM\\Snapshots".to_string()));
+        assert_eq!(settings.smart_paging_path, Some("C:\\VMs\\TestVM\\SmartPaging".to_string()));
+        assert!(settings.dynamic_memory);
+        assert_eq!(settings.dynamic_memory_min_mb, Some(1024));
+        assert_eq!(settings.dynamic_memory_max_mb, Some(16384));
+        assert_eq!(settings.memory_buffer_percentage, Some(20));
+        assert!(settings.secure_boot);
+        assert_eq!(settings.secure_boot_template, Some("MicrosoftWindows".to_string()));
+        assert!(settings.tpm_enabled);
+        assert!(settings.nested_virtualization);
+        assert_eq!(settings.automatic_start_action, AutomaticStartAction::AlwaysStart);
+        assert_eq!(settings.automatic_start_delay, 60);
+        assert_eq!(settings.automatic_stop_action, AutomaticStopAction::Shutdown);
+        assert_eq!(settings.checkpoint_type, CheckpointType::Production);
+        assert_eq!(settings.notes, Some("This is a test VM".to_string()));
+    }
+
+    // ========== Default Values Tests ==========
+
+    #[test]
+    fn test_builder_defaults() {
+        let result = valid_builder().build().unwrap();
+        assert!(!result.dynamic_memory);
+        assert!(!result.secure_boot);
+        assert!(!result.tpm_enabled);
+        assert!(!result.nested_virtualization);
+        assert_eq!(result.automatic_start_action, AutomaticStartAction::Nothing);
+        assert_eq!(result.automatic_start_delay, 0);
+        assert_eq!(result.automatic_stop_action, AutomaticStopAction::Save);
+        assert_eq!(result.checkpoint_type, CheckpointType::Production);
+    }
+}

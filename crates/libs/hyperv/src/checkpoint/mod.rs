@@ -165,3 +165,159 @@ impl ConsistencyLevel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========== ConsistencyLevel Tests ==========
+
+    #[test]
+    fn test_consistency_level_to_value() {
+        assert_eq!(ConsistencyLevel::ApplicationConsistent.to_value(), 1);
+        assert_eq!(ConsistencyLevel::CrashConsistent.to_value(), 2);
+    }
+
+    #[test]
+    fn test_consistency_level_default() {
+        assert_eq!(ConsistencyLevel::default(), ConsistencyLevel::ApplicationConsistent);
+    }
+
+    // ========== CheckpointSettings Builder Tests ==========
+
+    #[test]
+    fn test_checkpoint_settings_builder_valid() {
+        let result = CheckpointSettings::builder()
+            .name("TestCheckpoint")
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.name, "TestCheckpoint");
+    }
+
+    #[test]
+    fn test_checkpoint_settings_builder_with_notes() {
+        let result = CheckpointSettings::builder()
+            .name("TestCheckpoint")
+            .notes("This is a test checkpoint")
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.notes, Some("This is a test checkpoint".to_string()));
+    }
+
+    #[test]
+    fn test_checkpoint_settings_builder_with_type() {
+        let result = CheckpointSettings::builder()
+            .name("TestCheckpoint")
+            .checkpoint_type(CheckpointType::Standard)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.checkpoint_type, CheckpointType::Standard);
+    }
+
+    #[test]
+    fn test_checkpoint_settings_builder_with_consistency() {
+        let result = CheckpointSettings::builder()
+            .name("TestCheckpoint")
+            .consistency_level(ConsistencyLevel::CrashConsistent)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.consistency_level, ConsistencyLevel::CrashConsistent);
+    }
+
+    #[test]
+    fn test_checkpoint_settings_builder_all_options() {
+        let result = CheckpointSettings::builder()
+            .name("FullCheckpoint")
+            .notes("Full configuration test")
+            .checkpoint_type(CheckpointType::Production)
+            .consistency_level(ConsistencyLevel::ApplicationConsistent)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.name, "FullCheckpoint");
+        assert_eq!(settings.notes, Some("Full configuration test".to_string()));
+        assert_eq!(settings.checkpoint_type, CheckpointType::Production);
+        assert_eq!(settings.consistency_level, ConsistencyLevel::ApplicationConsistent);
+    }
+
+    #[test]
+    fn test_checkpoint_settings_builder_missing_name() {
+        let result = CheckpointSettings::builder()
+            .notes("No name provided")
+            .build();
+        assert!(result.is_err());
+    }
+
+    // ========== CheckpointSettings Validation Tests ==========
+
+    #[test]
+    fn test_checkpoint_settings_validation_empty_name() {
+        let result = CheckpointSettings::builder()
+            .name("")
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_checkpoint_settings_validation_name_too_long() {
+        let long_name = "a".repeat(101);
+        let result = CheckpointSettings::builder()
+            .name(long_name)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_checkpoint_settings_validation_name_max_length() {
+        let name = "a".repeat(100);
+        let result = CheckpointSettings::builder()
+            .name(name)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_checkpoint_settings_validation_name_min_length() {
+        let result = CheckpointSettings::builder()
+            .name("A")
+            .build();
+        assert!(result.is_ok());
+    }
+
+    // ========== Default Values Tests ==========
+
+    #[test]
+    fn test_checkpoint_settings_builder_defaults() {
+        let result = CheckpointSettings::builder()
+            .name("TestCheckpoint")
+            .build()
+            .unwrap();
+        // Default checkpoint type is Production
+        assert_eq!(result.checkpoint_type, CheckpointType::Production);
+        // Default consistency level is ApplicationConsistent
+        assert_eq!(result.consistency_level, ConsistencyLevel::ApplicationConsistent);
+        // Notes default to None
+        assert!(result.notes.is_none());
+    }
+
+    // ========== Checkpoint struct accessor tests ==========
+
+    #[test]
+    fn test_checkpoint_accessors_exist() {
+        // We can't easily create a Checkpoint without WMI, but we can verify
+        // the accessor methods exist through this compile-time type check
+        fn _assert_name_returns_str(_c: &Checkpoint) -> &str {
+            _c.name()
+        }
+        fn _assert_id_returns_str(_c: &Checkpoint) -> &str {
+            _c.id()
+        }
+        fn _assert_path_returns_str(_c: &Checkpoint) -> &str {
+            _c.path()
+        }
+    }
+}

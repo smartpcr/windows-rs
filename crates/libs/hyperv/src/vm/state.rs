@@ -349,3 +349,285 @@ impl AutomaticStopAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========== VmState Tests ==========
+
+    #[test]
+    fn test_vm_state_from_enabled_state() {
+        assert_eq!(VmState::from_enabled_state(2), VmState::Running);
+        assert_eq!(VmState::from_enabled_state(3), VmState::Off);
+        assert_eq!(VmState::from_enabled_state(4), VmState::ShuttingDown);
+        assert_eq!(VmState::from_enabled_state(5), VmState::NotApplicable);
+        assert_eq!(VmState::from_enabled_state(6), VmState::Disabled);
+        assert_eq!(VmState::from_enabled_state(32768), VmState::Paused);
+        assert_eq!(VmState::from_enabled_state(32769), VmState::Suspended);
+        assert_eq!(VmState::from_enabled_state(32770), VmState::Starting);
+        assert_eq!(VmState::from_enabled_state(32771), VmState::Snapshotting);
+        assert_eq!(VmState::from_enabled_state(32773), VmState::Saving);
+        assert_eq!(VmState::from_enabled_state(32774), VmState::Stopping);
+        assert_eq!(VmState::from_enabled_state(32776), VmState::Pausing);
+        assert_eq!(VmState::from_enabled_state(32777), VmState::Resuming);
+        assert_eq!(VmState::from_enabled_state(9999), VmState::Unknown);
+    }
+
+    #[test]
+    fn test_vm_state_can_start() {
+        assert!(VmState::Off.can_start());
+        assert!(VmState::Suspended.can_start());
+        assert!(VmState::Paused.can_start());
+        assert!(!VmState::Running.can_start());
+        assert!(!VmState::Starting.can_start());
+        assert!(!VmState::Unknown.can_start());
+    }
+
+    #[test]
+    fn test_vm_state_can_stop() {
+        assert!(VmState::Running.can_stop());
+        assert!(VmState::Paused.can_stop());
+        assert!(VmState::Suspended.can_stop());
+        assert!(!VmState::Off.can_stop());
+        assert!(!VmState::Stopping.can_stop());
+        assert!(!VmState::Unknown.can_stop());
+    }
+
+    #[test]
+    fn test_vm_state_can_pause() {
+        assert!(VmState::Running.can_pause());
+        assert!(!VmState::Off.can_pause());
+        assert!(!VmState::Paused.can_pause());
+        assert!(!VmState::Suspended.can_pause());
+        assert!(!VmState::Starting.can_pause());
+    }
+
+    #[test]
+    fn test_vm_state_can_save() {
+        assert!(VmState::Running.can_save());
+        assert!(VmState::Paused.can_save());
+        assert!(!VmState::Off.can_save());
+        assert!(!VmState::Suspended.can_save());
+        assert!(!VmState::Starting.can_save());
+    }
+
+    #[test]
+    fn test_vm_state_is_transitional() {
+        assert!(VmState::Starting.is_transitional());
+        assert!(VmState::Stopping.is_transitional());
+        assert!(VmState::Saving.is_transitional());
+        assert!(VmState::Pausing.is_transitional());
+        assert!(VmState::Resuming.is_transitional());
+        assert!(VmState::ShuttingDown.is_transitional());
+        assert!(VmState::Snapshotting.is_transitional());
+
+        assert!(!VmState::Running.is_transitional());
+        assert!(!VmState::Off.is_transitional());
+        assert!(!VmState::Paused.is_transitional());
+        assert!(!VmState::Suspended.is_transitional());
+        assert!(!VmState::Unknown.is_transitional());
+    }
+
+    #[test]
+    fn test_vm_state_display() {
+        assert_eq!(format!("{}", VmState::Unknown), "Unknown");
+        assert_eq!(format!("{}", VmState::Running), "Running");
+        assert_eq!(format!("{}", VmState::Off), "Off");
+        assert_eq!(format!("{}", VmState::ShuttingDown), "Shutting Down");
+        assert_eq!(format!("{}", VmState::NotApplicable), "Not Applicable");
+        assert_eq!(format!("{}", VmState::Disabled), "Disabled");
+        assert_eq!(format!("{}", VmState::Paused), "Paused");
+        assert_eq!(format!("{}", VmState::Suspended), "Saved");
+        assert_eq!(format!("{}", VmState::Starting), "Starting");
+        assert_eq!(format!("{}", VmState::Snapshotting), "Taking Snapshot");
+        assert_eq!(format!("{}", VmState::Saving), "Saving");
+        assert_eq!(format!("{}", VmState::Stopping), "Stopping");
+        assert_eq!(format!("{}", VmState::Pausing), "Pausing");
+        assert_eq!(format!("{}", VmState::Resuming), "Resuming");
+    }
+
+    // ========== Generation Tests ==========
+
+    #[test]
+    fn test_generation_to_subtype() {
+        assert_eq!(Generation::Gen1.to_subtype(), "Microsoft:Hyper-V:SubType:1");
+        assert_eq!(Generation::Gen2.to_subtype(), "Microsoft:Hyper-V:SubType:2");
+    }
+
+    #[test]
+    fn test_generation_from_subtype() {
+        assert_eq!(Generation::from_subtype("Microsoft:Hyper-V:SubType:1"), Generation::Gen1);
+        assert_eq!(Generation::from_subtype("Microsoft:Hyper-V:SubType:2"), Generation::Gen2);
+        assert_eq!(Generation::from_subtype("something:2:else"), Generation::Gen2);
+        assert_eq!(Generation::from_subtype("no number"), Generation::Gen1);
+    }
+
+    #[test]
+    fn test_generation_default() {
+        assert_eq!(Generation::default(), Generation::Gen1);
+    }
+
+    #[test]
+    fn test_generation_display() {
+        assert_eq!(format!("{}", Generation::Gen1), "Generation 1");
+        assert_eq!(format!("{}", Generation::Gen2), "Generation 2");
+    }
+
+    // ========== OperationalStatus Tests ==========
+
+    #[test]
+    fn test_operational_status_from_value() {
+        assert_eq!(OperationalStatus::from_value(2), OperationalStatus::Ok);
+        assert_eq!(OperationalStatus::from_value(3), OperationalStatus::Degraded);
+        assert_eq!(OperationalStatus::from_value(4), OperationalStatus::Stressed);
+        assert_eq!(OperationalStatus::from_value(5), OperationalStatus::PredictiveFailure);
+        assert_eq!(OperationalStatus::from_value(6), OperationalStatus::Error);
+        assert_eq!(OperationalStatus::from_value(7), OperationalStatus::NonRecoverableError);
+        assert_eq!(OperationalStatus::from_value(8), OperationalStatus::Starting);
+        assert_eq!(OperationalStatus::from_value(9), OperationalStatus::Stopping);
+        assert_eq!(OperationalStatus::from_value(10), OperationalStatus::Stopped);
+        assert_eq!(OperationalStatus::from_value(11), OperationalStatus::InService);
+        assert_eq!(OperationalStatus::from_value(12), OperationalStatus::NoContact);
+        assert_eq!(OperationalStatus::from_value(13), OperationalStatus::LostCommunication);
+        assert_eq!(OperationalStatus::from_value(14), OperationalStatus::Aborted);
+        assert_eq!(OperationalStatus::from_value(15), OperationalStatus::Dormant);
+        assert_eq!(OperationalStatus::from_value(16), OperationalStatus::SupportingEntity);
+        assert_eq!(OperationalStatus::from_value(17), OperationalStatus::Completed);
+        assert_eq!(OperationalStatus::from_value(18), OperationalStatus::PowerMode);
+        assert_eq!(OperationalStatus::from_value(32775), OperationalStatus::ProtocolVersionMismatch);
+        assert_eq!(OperationalStatus::from_value(32782), OperationalStatus::ApplicationCriticalState);
+        assert_eq!(OperationalStatus::from_value(32783), OperationalStatus::CommunicationTimedOut);
+        assert_eq!(OperationalStatus::from_value(32784), OperationalStatus::CommunicationFailed);
+        assert_eq!(OperationalStatus::from_value(9999), OperationalStatus::Unknown);
+    }
+
+    // ========== CheckpointType Tests ==========
+
+    #[test]
+    fn test_checkpoint_type_to_value() {
+        assert_eq!(CheckpointType::Disabled.to_value(), 0);
+        assert_eq!(CheckpointType::Production.to_value(), 1);
+        assert_eq!(CheckpointType::ProductionOnly.to_value(), 2);
+        assert_eq!(CheckpointType::Standard.to_value(), 3);
+    }
+
+    #[test]
+    fn test_checkpoint_type_from_value() {
+        assert_eq!(CheckpointType::from_value(0), CheckpointType::Disabled);
+        assert_eq!(CheckpointType::from_value(1), CheckpointType::Production);
+        assert_eq!(CheckpointType::from_value(2), CheckpointType::ProductionOnly);
+        assert_eq!(CheckpointType::from_value(3), CheckpointType::Standard);
+        assert_eq!(CheckpointType::from_value(99), CheckpointType::Production);
+    }
+
+    #[test]
+    fn test_checkpoint_type_default() {
+        assert_eq!(CheckpointType::default(), CheckpointType::Production);
+    }
+
+    #[test]
+    fn test_checkpoint_type_roundtrip() {
+        for ct in [
+            CheckpointType::Disabled,
+            CheckpointType::Production,
+            CheckpointType::ProductionOnly,
+            CheckpointType::Standard,
+        ] {
+            assert_eq!(CheckpointType::from_value(ct.to_value()), ct);
+        }
+    }
+
+    // ========== AutomaticStartAction Tests ==========
+
+    #[test]
+    fn test_automatic_start_action_to_value() {
+        assert_eq!(AutomaticStartAction::Nothing.to_value(), 0);
+        assert_eq!(AutomaticStartAction::StartIfRunning.to_value(), 1);
+        assert_eq!(AutomaticStartAction::AlwaysStart.to_value(), 2);
+    }
+
+    #[test]
+    fn test_automatic_start_action_from_value() {
+        assert_eq!(AutomaticStartAction::from_value(0), AutomaticStartAction::Nothing);
+        assert_eq!(AutomaticStartAction::from_value(1), AutomaticStartAction::StartIfRunning);
+        assert_eq!(AutomaticStartAction::from_value(2), AutomaticStartAction::AlwaysStart);
+        assert_eq!(AutomaticStartAction::from_value(99), AutomaticStartAction::Nothing);
+    }
+
+    #[test]
+    fn test_automatic_start_action_default() {
+        assert_eq!(AutomaticStartAction::default(), AutomaticStartAction::Nothing);
+    }
+
+    #[test]
+    fn test_automatic_start_action_roundtrip() {
+        for action in [
+            AutomaticStartAction::Nothing,
+            AutomaticStartAction::StartIfRunning,
+            AutomaticStartAction::AlwaysStart,
+        ] {
+            assert_eq!(AutomaticStartAction::from_value(action.to_value()), action);
+        }
+    }
+
+    // ========== AutomaticStopAction Tests ==========
+
+    #[test]
+    fn test_automatic_stop_action_to_value() {
+        assert_eq!(AutomaticStopAction::TurnOff.to_value(), 0);
+        assert_eq!(AutomaticStopAction::Save.to_value(), 1);
+        assert_eq!(AutomaticStopAction::Shutdown.to_value(), 2);
+    }
+
+    #[test]
+    fn test_automatic_stop_action_from_value() {
+        assert_eq!(AutomaticStopAction::from_value(0), AutomaticStopAction::TurnOff);
+        assert_eq!(AutomaticStopAction::from_value(1), AutomaticStopAction::Save);
+        assert_eq!(AutomaticStopAction::from_value(2), AutomaticStopAction::Shutdown);
+        assert_eq!(AutomaticStopAction::from_value(99), AutomaticStopAction::Save);
+    }
+
+    #[test]
+    fn test_automatic_stop_action_default() {
+        assert_eq!(AutomaticStopAction::default(), AutomaticStopAction::Save);
+    }
+
+    #[test]
+    fn test_automatic_stop_action_roundtrip() {
+        for action in [
+            AutomaticStopAction::TurnOff,
+            AutomaticStopAction::Save,
+            AutomaticStopAction::Shutdown,
+        ] {
+            assert_eq!(AutomaticStopAction::from_value(action.to_value()), action);
+        }
+    }
+
+    // ========== RequestedState Tests ==========
+
+    #[test]
+    fn test_requested_state_values() {
+        assert_eq!(RequestedState::Running as u16, 2);
+        assert_eq!(RequestedState::Off as u16, 3);
+        assert_eq!(RequestedState::Paused as u16, 32768);
+        assert_eq!(RequestedState::Saved as u16, 32769);
+        assert_eq!(RequestedState::Reset as u16, 11);
+    }
+
+    // ========== VmState to_error Tests ==========
+
+    #[test]
+    fn test_vm_state_to_error() {
+        assert_eq!(VmState::Unknown.to_error(), VmStateError::Unknown);
+        assert_eq!(VmState::Running.to_error(), VmStateError::Running);
+        assert_eq!(VmState::Off.to_error(), VmStateError::Off);
+        assert_eq!(VmState::ShuttingDown.to_error(), VmStateError::ShuttingDown);
+        assert_eq!(VmState::Paused.to_error(), VmStateError::Paused);
+        assert_eq!(VmState::Suspended.to_error(), VmStateError::Suspended);
+        assert_eq!(VmState::Starting.to_error(), VmStateError::Starting);
+        assert_eq!(VmState::Stopping.to_error(), VmStateError::Stopping);
+        // Other states map to VmStateError::Other
+        assert_eq!(VmState::Disabled.to_error(), VmStateError::Other(6));
+    }
+}

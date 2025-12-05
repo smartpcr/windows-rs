@@ -1,5 +1,13 @@
-mod switch;
 mod adapter;
+mod physical_adapter;
+mod switch;
 
-pub use switch::{VirtualSwitch, SwitchType, VirtualSwitchSettings, VirtualSwitchSettingsBuilder};
-pub use adapter::{NetworkAdapter, NetworkAdapterSettings, NetworkAdapterSettingsBuilder, PortMirroringMode, BandwidthSettings};
+pub use adapter::{
+    BandwidthSettings, NetworkAdapter, NetworkAdapterSettings, NetworkAdapterSettingsBuilder,
+    PortMirroringMode,
+};
+pub use physical_adapter::{ConnectionStatus, PhysicalAdapter};
+pub use switch::{
+    BandwidthReservationMode, IovMode, SwitchType, VirtualSwitch, VirtualSwitchSettings,
+    VirtualSwitchSettingsBuilder,
+};

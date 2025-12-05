@@ -525,3 +525,343 @@ impl VhdManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========== VhdFormat Tests ==========
+
+    #[test]
+    fn test_vhd_format_extension() {
+        assert_eq!(VhdFormat::Vhd.extension(), "vhd");
+        assert_eq!(VhdFormat::Vhdx.extension(), "vhdx");
+    }
+
+    #[test]
+    fn test_vhd_format_from_path() {
+        assert_eq!(VhdFormat::from_path("test.vhd"), VhdFormat::Vhd);
+        assert_eq!(VhdFormat::from_path("test.VHD"), VhdFormat::Vhd);
+        assert_eq!(VhdFormat::from_path("test.vhdx"), VhdFormat::Vhdx);
+        assert_eq!(VhdFormat::from_path("test.VHDX"), VhdFormat::Vhdx);
+        assert_eq!(VhdFormat::from_path("C:\\VMs\\disk.vhd"), VhdFormat::Vhd);
+        assert_eq!(VhdFormat::from_path("C:\\VMs\\disk.vhdx"), VhdFormat::Vhdx);
+        // Default to VHDX for unknown
+        assert_eq!(VhdFormat::from_path("test.img"), VhdFormat::Vhdx);
+        assert_eq!(VhdFormat::from_path("test"), VhdFormat::Vhdx);
+    }
+
+    #[test]
+    fn test_vhd_format_default() {
+        assert_eq!(VhdFormat::default(), VhdFormat::Vhdx);
+    }
+
+    // ========== VhdType Tests ==========
+
+    #[test]
+    fn test_vhd_type_to_wmi_value() {
+        assert_eq!(VhdType::Fixed.to_wmi_value(), 2);
+        assert_eq!(VhdType::Dynamic.to_wmi_value(), 3);
+        assert_eq!(VhdType::Differencing.to_wmi_value(), 4);
+    }
+
+    #[test]
+    fn test_vhd_type_from_wmi_value() {
+        assert_eq!(VhdType::from_wmi_value(2), VhdType::Fixed);
+        assert_eq!(VhdType::from_wmi_value(3), VhdType::Dynamic);
+        assert_eq!(VhdType::from_wmi_value(4), VhdType::Differencing);
+        assert_eq!(VhdType::from_wmi_value(0), VhdType::Dynamic); // Default
+        assert_eq!(VhdType::from_wmi_value(99), VhdType::Dynamic); // Default
+    }
+
+    #[test]
+    fn test_vhd_type_roundtrip() {
+        for vt in [VhdType::Fixed, VhdType::Dynamic, VhdType::Differencing] {
+            assert_eq!(VhdType::from_wmi_value(vt.to_wmi_value()), vt);
+        }
+    }
+
+    #[test]
+    fn test_vhd_type_default() {
+        assert_eq!(VhdType::default(), VhdType::Dynamic);
+    }
+
+    // ========== VhdSettings Builder Tests ==========
+
+    #[test]
+    fn test_vhd_settings_builder_vhdx() {
+        let result = VhdSettings::builder()
+            .path("C:\\VMs\\test.vhdx")
+            .size_gb(100)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.path, "C:\\VMs\\test.vhdx");
+        assert_eq!(settings.format, VhdFormat::Vhdx);
+        assert_eq!(settings.size_bytes, 100 * 1024 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_vhd_settings_builder_vhd() {
+        let result = VhdSettings::builder()
+            .path("C:\\VMs\\test.vhd")
+            .size_gb(50)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.format, VhdFormat::Vhd);
+    }
+
+    #[test]
+    fn test_vhd_settings_builder_format_autodetect() {
+        let vhdx = VhdSettings::builder()
+            .path("test.vhdx")
+            .size_gb(10)
+            .build()
+            .unwrap();
+        assert_eq!(vhdx.format, VhdFormat::Vhdx);
+
+        let vhd = VhdSettings::builder()
+            .path("test.vhd")
+            .size_gb(10)
+            .build()
+            .unwrap();
+        assert_eq!(vhd.format, VhdFormat::Vhd);
+    }
+
+    #[test]
+    fn test_vhd_settings_builder_fixed() {
+        let result = VhdSettings::builder()
+            .path("C:\\VMs\\fixed.vhdx")
+            .disk_type(VhdType::Fixed)
+            .size_gb(100)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.disk_type, VhdType::Fixed);
+    }
+
+    #[test]
+    fn test_vhd_settings_builder_differencing() {
+        let result = VhdSettings::builder()
+            .path("C:\\VMs\\diff.vhdx")
+            .parent_path("C:\\VMs\\base.vhdx")
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.disk_type, VhdType::Differencing);
+        assert_eq!(settings.parent_path, Some("C:\\VMs\\base.vhdx".to_string()));
+    }
+
+    #[test]
+    fn test_vhd_settings_builder_sector_sizes() {
+        let result = VhdSettings::builder()
+            .path("C:\\VMs\\test.vhdx")
+            .size_gb(100)
+            .logical_sector_size(512)
+            .physical_sector_size(4096)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.logical_sector_size, Some(512));
+        assert_eq!(settings.physical_sector_size, Some(4096));
+    }
+
+    #[test]
+    fn test_vhd_settings_builder_block_size() {
+        let result = VhdSettings::builder()
+            .path("C:\\VMs\\test.vhdx")
+            .size_gb(100)
+            .block_size_bytes(32 * 1024 * 1024)
+            .build();
+        assert!(result.is_ok());
+        let settings = result.unwrap();
+        assert_eq!(settings.block_size_bytes, Some(32 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_vhd_settings_builder_missing_path() {
+        let result = VhdSettings::builder()
+            .size_gb(100)
+            .build();
+        assert!(result.is_err());
+    }
+
+    // ========== VhdSettings Validation Tests ==========
+
+    #[test]
+    fn test_vhd_settings_validation_empty_path() {
+        let result = VhdSettings::builder()
+            .path("")
+            .size_gb(100)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_vhd_wrong_extension() {
+        let settings = VhdSettings {
+            path: "test.vhdx".to_string(),
+            format: VhdFormat::Vhd, // Mismatch!
+            disk_type: VhdType::Dynamic,
+            size_bytes: 100 * 1024 * 1024 * 1024,
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None,
+        };
+        assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_vhdx_wrong_extension() {
+        let settings = VhdSettings {
+            path: "test.vhd".to_string(),
+            format: VhdFormat::Vhdx, // Mismatch!
+            disk_type: VhdType::Dynamic,
+            size_bytes: 100 * 1024 * 1024 * 1024,
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None,
+        };
+        assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_zero_size() {
+        let settings = VhdSettings {
+            path: "test.vhdx".to_string(),
+            format: VhdFormat::Vhdx,
+            disk_type: VhdType::Dynamic,
+            size_bytes: 0, // Invalid (non-differencing needs size)
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None,
+        };
+        assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_zero_size_differencing_ok() {
+        let settings = VhdSettings {
+            path: "test.vhdx".to_string(),
+            format: VhdFormat::Vhdx,
+            disk_type: VhdType::Differencing,
+            size_bytes: 0, // OK for differencing
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: Some("parent.vhdx".to_string()),
+        };
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_vhd_max_2tb() {
+        // 2 TB should be valid
+        let settings_2tb = VhdSettings {
+            path: "test.vhd".to_string(),
+            format: VhdFormat::Vhd,
+            disk_type: VhdType::Dynamic,
+            size_bytes: 2 * 1024 * 1024 * 1024 * 1024,
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None,
+        };
+        assert!(settings_2tb.validate().is_ok());
+
+        // Over 2 TB should fail
+        let settings_over = VhdSettings {
+            path: "test.vhd".to_string(),
+            format: VhdFormat::Vhd,
+            disk_type: VhdType::Dynamic,
+            size_bytes: 2 * 1024 * 1024 * 1024 * 1024 + 1,
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None,
+        };
+        assert!(settings_over.validate().is_err());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_vhdx_max_64tb() {
+        // 64 TB should be valid
+        let settings_64tb = VhdSettings {
+            path: "test.vhdx".to_string(),
+            format: VhdFormat::Vhdx,
+            disk_type: VhdType::Dynamic,
+            size_bytes: 64 * 1024 * 1024 * 1024 * 1024,
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None,
+        };
+        assert!(settings_64tb.validate().is_ok());
+
+        // Over 64 TB should fail
+        let settings_over = VhdSettings {
+            path: "test.vhdx".to_string(),
+            format: VhdFormat::Vhdx,
+            disk_type: VhdType::Dynamic,
+            size_bytes: 64 * 1024 * 1024 * 1024 * 1024 + 1,
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None,
+        };
+        assert!(settings_over.validate().is_err());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_differencing_requires_parent() {
+        let settings = VhdSettings {
+            path: "test.vhdx".to_string(),
+            format: VhdFormat::Vhdx,
+            disk_type: VhdType::Differencing,
+            size_bytes: 0,
+            block_size_bytes: None,
+            logical_sector_size: None,
+            physical_sector_size: None,
+            parent_path: None, // Required for differencing
+        };
+        assert!(settings.validate().is_err());
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_sector_size_valid() {
+        for sector in [512, 4096] {
+            let settings = VhdSettings {
+                path: "test.vhdx".to_string(),
+                format: VhdFormat::Vhdx,
+                disk_type: VhdType::Dynamic,
+                size_bytes: 100 * 1024 * 1024 * 1024,
+                block_size_bytes: None,
+                logical_sector_size: Some(sector),
+                physical_sector_size: Some(sector),
+                parent_path: None,
+            };
+            assert!(settings.validate().is_ok(), "Sector size {} should be valid", sector);
+        }
+    }
+
+    #[test]
+    fn test_vhd_settings_validation_sector_size_invalid() {
+        for sector in [256, 1024, 2048, 8192] {
+            let settings = VhdSettings {
+                path: "test.vhdx".to_string(),
+                format: VhdFormat::Vhdx,
+                disk_type: VhdType::Dynamic,
+                size_bytes: 100 * 1024 * 1024 * 1024,
+                block_size_bytes: None,
+                logical_sector_size: Some(sector),
+                physical_sector_size: None,
+                parent_path: None,
+            };
+            assert!(settings.validate().is_err(), "Sector size {} should be invalid", sector);
+        }
+    }
+}

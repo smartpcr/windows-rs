@@ -73,9 +73,10 @@ pub use hyperv::HyperV;
 // VM types
 #[cfg(windows)]
 pub use vm::{
-    AutomaticStartAction, AutomaticStopAction, CheckpointType, Generation,
-    OperationalStatus, RequestedState, ShutdownType, VirtualMachine, VmSettings,
-    VmSettingsBuilder, VmState,
+    AutomaticStartAction, AutomaticStopAction, BandwidthWeight, BlockSize, CheckpointType,
+    DiskLocation, DiskSize, Generation, MacAddress, MemoryBufferPercent, MemoryMB, MemoryWeight,
+    OperationalStatus, ProcessorCount, ProcessorPercent, ProcessorWeight, RequestedState,
+    SectorSize, ShutdownType, VirtualMachine, VlanId, VmSettings, VmSettingsBuilder, VmState,
 };
 
 // Checkpoint types
@@ -92,7 +93,7 @@ pub use storage::{
 // Network types
 #[cfg(windows)]
 pub use network::{
-    BandwidthSettings, NetworkAdapter, NetworkAdapterSettings, NetworkAdapterSettingsBuilder,
-    PortMirroringMode, SwitchType, VirtualSwitch, VirtualSwitchSettings,
-    VirtualSwitchSettingsBuilder,
+    BandwidthReservationMode, BandwidthSettings, ConnectionStatus, IovMode, NetworkAdapter,
+    NetworkAdapterSettings, NetworkAdapterSettingsBuilder, PhysicalAdapter, PortMirroringMode,
+    SwitchType, VirtualSwitch, VirtualSwitchSettings, VirtualSwitchSettingsBuilder,
 };
